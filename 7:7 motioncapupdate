@@ -1,0 +1,334 @@
+#include <iostream>
+#include<opencv2/opencv.hpp>
+#include <opencv2/core.hpp>
+#include <opencv2/highgui.hpp>
+#include <opencv2/imgproc.hpp>
+#include <opencv2/videoio.hpp>
+#include <opencv2/video.hpp>
+#include <opencv2/video/tracking.hpp>
+#include<vector>
+#include<string>
+#include<cstring>
+#include <opencv2/imgcodecs.hpp>
+#include<windows.h>
+#include <numeric>      // std::iota
+#include <algorithm>    // std::sort, std::stable_sort
+#include<math.h>
+#ifdef _DEBUG
+#pragma comment(lib, "opencv_world452d.lib")
+#else
+#pragma comment(lib, "opencv_world452.lib")
+#endif
+
+FILE* fp = NULL;//ファイルポインタ宣言
+char FileName[127] = { "FILE_AD" };//ファイルの名前用の文字列
+using namespace cv;
+using namespace std;
+
+int maxPointsearch(vector<KeyPoint> contours) {
+    double maxy = contours.at(0).pt.y;
+    int index=0;
+    for (int i = 1; i < contours.size(); i++) {
+        if (maxy < contours.at(i).pt.y) {
+            maxy = contours.at(i).pt.y;
+            index = i;
+        }
+    }
+    return index;
+}
+
+int minPointsearch(vector<KeyPoint> contours) {
+    double miny = contours.at(0).pt.y;
+    int index=0;
+    for (int i = 1; i < contours.size(); i++) {
+        if (miny > contours.at(i).pt.y) {
+            miny = contours.at(i).pt.y;
+            index = i;
+        }
+    }
+    return index;
+}
+
+int minPoint(vector<KeyPoint> contours) {
+    double minx = contours.at(0).pt.x;
+    int index = 0;
+    for (int i = 1; i < contours.size(); i++) {
+        if (minx > contours.at(i).pt.x) {
+            minx = contours.at(i).pt.x;
+            index = i;
+        }
+    }
+    return index;
+}
+
+double TryangleArea(Point a, Point b, Point c) {
+    double AB_x = (double)b.x - (double)a.x;
+    double AB_y = (double)b.y - (double)a.y;
+    double AC_x = (double)c.x - (double)a.x;
+    double AC_y = (double)c.y - (double)a.y;
+    double AREA = abs(AB_x * AC_y - AB_y * AC_x) * 0.5;
+
+    return AREA;
+}
+
+int MatArea(Mat canny) {
+    vector<int> Area(1000);
+    //dilate(canny, canny, Mat(), Point(-1, -1), 3);
+
+    vector<vector<Point> > contours;
+    findContours(canny, contours, RETR_TREE, CHAIN_APPROX_SIMPLE);
+
+    Mat drawing = Mat::zeros(canny.size(), CV_8UC3);
+    RNG rng(12345);
+
+    for (size_t i = 0; i < contours.size(); i++) {
+        Scalar color = cv::Scalar(rng.uniform(0, 256), rng.uniform(0, 256), rng.uniform(0, 256));
+        drawContours(drawing, contours, (int)i, color);
+        Area.at(i) = contourArea(contours[i]);
+    }
+
+    sort(Area.begin(), Area.end(), greater<int>());
+
+    return Area.at(0);
+}
+
+Mat Bit_Wise2(Mat img1, Mat img2) {
+    Mat img1_gry, img2_gry, img_gry;
+    cvtColor(img1, img1_gry, COLOR_BGR2GRAY);
+    cvtColor(img2, img2_gry, COLOR_BGR2GRAY);
+    absdiff(img1_gry, img2_gry, img_gry);
+
+    return img_gry;
+}
+
+vector<KeyPoint> Threepoint(vector<KeyPoint> keypoint1) {
+    
+    Point Gx = Point(0, 0);
+    Point Gy = Point(0, 0);
+    Point Gz = Point(0, 0);
+    int minindex = minPointsearch(keypoint1);
+    int maxindex = maxPointsearch(keypoint1);
+
+    Gx = Point(keypoint1.at(minindex).pt.x, keypoint1.at(minindex).pt.y);
+    Gy = Point(keypoint1.at(maxindex).pt.x, keypoint1.at(maxindex).pt.y);
+    Gz = Point(keypoint1.at(minPoint(keypoint1)).pt.x, keypoint1.at(minPoint(keypoint1)).pt.y);
+    vector<KeyPoint> keypoint3(3);
+    keypoint3.at(0).pt = Gx;
+    keypoint3.at(0).size = keypoint1.at(minindex).size;
+    keypoint3.at(0).angle = keypoint1.at(minindex).angle;
+    keypoint3.at(0).response = keypoint1.at(minindex).response;
+    keypoint3.at(0).class_id = 0;
+    keypoint3.at(1).pt = Gy;
+    keypoint3.at(1).size = keypoint1.at(maxindex).size;
+    keypoint3.at(1).angle = keypoint1.at(maxindex).angle;
+    keypoint3.at(1).response = keypoint1.at(maxindex).response;
+    keypoint3.at(1).class_id = 0;
+    keypoint3.at(2).pt = Gz;
+    keypoint3.at(2).size = keypoint1.at(minPoint(keypoint1)).size;
+    keypoint3.at(2).angle = keypoint1.at(minPoint(keypoint1)).angle;
+    keypoint3.at(2).response = keypoint1.at(minPoint(keypoint1)).response;
+    keypoint3.at(2).class_id = 0;
+    return keypoint3;
+}
+
+int main(int argc, const char* argv[]) {
+    errno_t error;
+    SYSTEMTIME systime;//時間記録用
+    GetLocalTime(&systime);
+    sprintf_s(FileName, "%d_%d_%dh%dm%d.csv", systime.wMonth, systime.wDay, systime.wHour, systime.wMinute, systime.wSecond);
+    error = fopen_s(&fp, FileName, "w+");//ファイル書き込み呼び出し
+
+    VideoCapture capture(0);
+    Mat frame1, frame2;
+    Mat frame1_gry, frame2_gry;
+    Mat edge1, edge2;
+    Mat img1,img11,img2,img3,img4,diff,edge;
+
+    for (;;) {
+        Mat img;
+        capture >> img;
+        imshow("view", img);
+        if (waitKey(100) == 27) {
+            break;
+        }
+    }
+    capture >> frame1;
+    Rect roi;
+    roi = selectROI("tracker", frame1);
+    if (roi.width == 0 || roi.height == 0) {
+        return 0;
+    }
+    frame1 = frame1(roi);
+    img1 = frame1.clone();
+    img11 = img1.clone();
+    //cvtColor(frame1, frame1_gry, COLOR_BGR2GRAY);
+    //Canny(frame1_gry, edge1, 50, 100, 3, true);
+    auto algorithm = AKAZE::create();
+    vector<KeyPoint> keypoint1, keypoint2;
+    algorithm->detect(img1, keypoint1);
+    Mat descriptor1, descriptor2;
+    algorithm->compute(img1, keypoint1, descriptor1);
+    int b = keypoint2.size();
+    
+    //vector<int> coordinate1_y(a);
+    Point Gx = Point(0, 0);
+    Point Gy = Point(0, 0);
+    Point Gz = Point(0, 0);
+    /*
+    int minindex = minPointsearch(keypoint1);
+    int maxindex = maxPointsearch(keypoint1);
+    for (int k = 0; k < keypoint1.size(); k++) {
+        //coordinate1_y.at(k) = keypoint1.at(k).pt.y;
+    }
+    //sort(coordinate1_x.begin(), coordinate1_x.end());
+    //sort(coordinate1_y.begin(), coordinate1_y.end());
+    //int min = *min_element(coordinate1_y.begin(), coordinate1_y.end());
+    //int max = *max_element(coordinate1_y.begin(), coordinate1_y.end());
+    Gx = Point(keypoint1.at(minindex).pt.x, keypoint1.at(minindex).pt.y);
+    Gy = Point(keypoint1.at(maxindex).pt.x, keypoint1.at(maxindex).pt.y);
+    Gz = Point(keypoint1.at(minPoint(keypoint1)).pt.x, keypoint1.at(minPoint(keypoint1)).pt.y);
+    vector<KeyPoint> keypoint3(3);
+    keypoint3.at(0).pt = Gx;
+    keypoint3.at(0).size = keypoint1.at(minindex).size;
+    keypoint3.at(0).angle = keypoint1.at(minindex).angle;
+    keypoint3.at(0).response = keypoint1.at(minindex).response;
+    keypoint3.at(0).class_id = 0;
+    keypoint3.at(1).pt = Gy;
+    keypoint3.at(1).size = keypoint1.at(maxindex).size;
+    keypoint3.at(1).angle = keypoint1.at(maxindex).angle;
+    keypoint3.at(1).response = keypoint1.at(maxindex).response;
+    keypoint3.at(1).class_id = 0;
+    keypoint3.at(2).pt = Gz;
+    keypoint3.at(2).size = keypoint1.at(minPoint(keypoint1)).size;
+    keypoint3.at(2).angle = keypoint1.at(minPoint(keypoint1)).angle;
+    keypoint3.at(2).response = keypoint1.at(minPoint(keypoint1)).response;
+    keypoint3.at(2).class_id = 0;
+    */
+    vector<KeyPoint> keypoint3=Threepoint(keypoint1);
+    Mat descriptor3;
+    algorithm->compute(img11, keypoint3, descriptor3);
+    double b_area = 0;
+    int count=0;
+    for (;;) {
+        waitKey(1);
+
+        capture >> frame2;
+        
+        img2 = frame2.clone();
+        img3 = frame2.clone();
+        img4 = frame2.clone();
+        frame2 = frame2(roi);
+        /*
+        cvtColor(frame2, frame2_gry, COLOR_BGR2GRAY);
+        Canny(frame2_gry, edge, 50, 100, 3, true);
+        */
+        diff = Bit_Wise2(frame1, frame2);
+        medianBlur(diff, diff, 3);
+        Canny(diff, edge, 50, 100, 3, true);
+        dilate(edge,edge,Mat(), Point(-1, -1), 5);
+        bitwise_and(img3(roi), img3(roi), img4, edge);
+        //imshow("1", frame1_gry);
+        //imshow("2", descriptor1);
+
+        imshow("diff", edge);
+        imshow("ans", img4);
+
+        int white = MatArea(edge);
+        if (white < 1000) {
+            //dilate(diff, diff, Mat(), Point(-1, -1), 3);
+            Mat kernel = getStructuringElement(MORPH_RECT, Size(9, 9));
+            //morphologyEx(diff, diff, MORPH_OPEN, kernel);
+        }
+        //Canny(diff, edge2, 50, 100, 3, true);
+        algorithm->detect(img4, keypoint2);
+        algorithm->compute(img4, keypoint2, descriptor2);
+        Ptr<DescriptorMatcher> matcher = DescriptorMatcher::create("BruteForce");
+        vector<DMatch> match, match23, match32;
+        matcher->match(descriptor3, descriptor2, match23);
+        matcher->match(descriptor2, descriptor3, match32);
+        
+        for (size_t i = 0; i < match23.size(); i++)
+        {
+            DMatch forward = match23[i];
+            DMatch backward = match32[forward.trainIdx];
+            if (backward.trainIdx == forward.queryIdx)
+            {
+                match.push_back(forward);
+            }
+        }
+
+        Mat dest;
+        drawMatches(frame1, keypoint3, frame2, keypoint2, match, dest, Scalar::all(-1));
+        imshow("matching", dest);
+        waitKey(1);
+        frame1 = frame2.clone();
+        //int a = keypoint1.size();
+        keypoint3 = Threepoint(keypoint2);
+        Gx = keypoint3.at(0).pt;
+        Gy = keypoint3.at(1).pt;
+        Gz = keypoint3.at(2).pt;
+        circle(frame2,Gx,10,Scalar(0,0,255),3,8);
+        circle(frame2,Gy,10,Scalar(255,0,0),3,8);
+        circle(frame2,Gz,10,Scalar(0,255,0),3,8);
+        line(frame2, Gx, Gy, Scalar(255, 0, 255), 4, 8);
+        line(frame2, Gx, Gz, Scalar(0, 255, 255), 4, 8);
+        line(frame2, Gy, Gz, Scalar(255, 255, 0), 4, 8);
+        double length = sqrt(pow((double)Gx.x - (double)Gy.x, 2.0) + pow((double)Gx.y - (double)Gy.y, 2.0));
+        printf("%lf\n", length);
+        count++;
+        double area = TryangleArea(Gx, Gy, Gz);
+        if (area < 1000) {
+            //continue;
+        }
+
+        if (abs(b_area - area) < 360) {
+            fprintf(fp, "AREA:,%lf\n", area);
+            b_area = area;
+        }
+        
+        if (count == 1) {
+            b_area = area;
+        }
+        
+        imshow("en",frame2);
+
+        
+        if (waitKey(33) == 27) {//breakは必須
+            break;
+        }
+
+        /*
+        vector <double> deg1(100);
+        vector <double> deg2(100);
+        vector <double> len1(100);
+        vector <double> len2(100);
+
+        for (int k = 0; k < 10; k++) {
+            int q = keypoint1.at(k).size;
+            int p = keypoint2.at(k).size;
+            
+            printf("%d(%d)(%d)\n", k, q, p);
+            //printf("%lf\n", sqrt(pow((double)keypoint1.at(k).pt.x - (double)keypoint2.at(k).pt.x, 2.0) + pow((double)keypoint1.at(k).pt.y - (double)keypoint2.at(k).pt.y, 2.0)));
+            //printf("%lf\n", pow((double)keypoint1.at(k).pt.x - (double)keypoint2.at(k).pt.x, 2.0));
+            for (int j = 0; j < 10; j++) {
+                if (p >= j && q>=j) {
+                    len1.at(k) = sqrt(pow((double)keypoint1.at(k).pt.x - (double)keypoint1.at(j).pt.x, 2.0) + pow((double)keypoint1.at(k).pt.y - (double)keypoint1.at(j).pt.y, 2.0));
+                    len2.at(k) = sqrt(pow((double)keypoint2.at(k).pt.x - (double)keypoint2.at(j).pt.x, 2.0) + pow((double)keypoint2.at(k).pt.y - (double)keypoint2.at(j).pt.y, 2.0));
+                    deg1.at(k) = atan2(keypoint1.at(k).pt.x - keypoint1.at(j).pt.x, keypoint1.at(k).pt.y - keypoint1.at(j).pt.y);
+                    deg2.at(k) = atan2(keypoint2.at(k).pt.x - keypoint2.at(j).pt.x, keypoint2.at(k).pt.y - keypoint2.at(j).pt.y);
+                    printf("1:%lf\n", len1.at(k));
+                    printf("2:%lf\n", len2.at(k));
+                    printf("11:%lf\n", deg1.at(k));
+                    printf("22:%lf\n", deg2.at(k));
+                    //printf("deg(% d)(% d) =%lf\n", i, j, deg.at(i).at(j));
+                }
+                else {
+                    break;
+                }
+            }
+        }
+        */
+    }
+    fclose(fp);
+    return 0;
+}
