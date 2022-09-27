@@ -1,0 +1,261 @@
+#include <iostream>
+#include<opencv2/opencv.hpp>
+#include <opencv2/core.hpp>
+#include <opencv2/highgui.hpp>
+#include <opencv2/imgproc.hpp>
+#include <opencv2/videoio.hpp>
+#include <opencv2/video.hpp>
+#include <opencv2/video/tracking.hpp>
+#include<vector>
+#include<string>
+#include<cstring>
+#include <opencv2/imgcodecs.hpp>
+#include<windows.h>
+#include <numeric>      // std::iota
+#include <algorithm>    // std::sort, std::stable_sort
+#include<math.h>
+#include<map>
+#include<utility>
+
+#ifdef _DEBUG
+#pragma comment(lib, "opencv_world452d.lib")
+#else
+#pragma comment(lib, "opencv_world452.lib")
+#endif
+
+FILE* fp = NULL;//ファイルポインタ宣言
+char FileName[127] = { "FILE_AD" };//ファイルの名前用の文字列
+using namespace cv;
+using namespace std;
+
+int maxPointsearch(vector<KeyPoint> contours) {
+    double maxy = contours.at(0).pt.y;
+    int index = 0;
+    for (int i = 1; i < contours.size(); i++) {
+        if (maxy < contours.at(i).pt.y) {
+            maxy = contours.at(i).pt.y;
+            index = i;
+        }
+    }
+    return index;
+}
+
+int minPointsearch(vector<KeyPoint> contours) {
+    double miny = contours.at(0).pt.y;
+    int index = 0;
+    for (int i = 1; i < contours.size(); i++) {
+        if (miny > contours.at(i).pt.y) {
+            miny = contours.at(i).pt.y;
+            index = i;
+        }
+    }
+    return index;
+}
+
+Point minPoint(vector<KeyPoint> contours) {
+    double minx = contours.at(0).pt.x;
+    int index = 0;
+    for (int i = 1; i < contours.size(); i++) {
+        if (minx > contours.at(i).pt.x) {
+            minx = contours.at(i).pt.x;
+            index = i;
+        }
+    }
+    return Point(contours.at(index).pt.x, contours.at(index).pt.y);
+}
+
+double TryangleArea(Point a, Point b, Point c) {
+    double AB_x = (double)b.x - (double)a.x;
+    double AB_y = (double)b.y - (double)a.y;
+    double AC_x = (double)c.x - (double)a.x;
+    double AC_y = (double)c.y - (double)a.y;
+    double AREA = abs(AB_x * AC_y - AB_y * AC_x) * 0.5;
+
+    return AREA;
+}
+
+int MatArea(Mat canny) {
+    vector<int> Area(1000);
+    //dilate(canny, canny, Mat(), Point(-1, -1), 3);
+
+    vector<vector<Point> > contours;
+    findContours(canny, contours, RETR_TREE, CHAIN_APPROX_SIMPLE);
+
+    Mat drawing = Mat::zeros(canny.size(), CV_8UC3);
+    RNG rng(12345);
+
+    for (size_t i = 0; i < contours.size(); i++) {
+        Scalar color = cv::Scalar(rng.uniform(0, 256), rng.uniform(0, 256), rng.uniform(0, 256));
+        drawContours(drawing, contours, (int)i, color);
+        Area.at(i) = contourArea(contours[i]);
+    }
+
+    sort(Area.begin(), Area.end(), greater<int>());
+
+    return Area.at(0);
+}
+
+Mat Bit_Wise2(Mat img1, Mat img2) {
+    Mat img1_gry, img2_gry, img_gry;
+    cvtColor(img1, img1_gry, COLOR_BGR2GRAY);
+    cvtColor(img2, img2_gry, COLOR_BGR2GRAY);
+    absdiff(img1_gry, img2_gry, img_gry);
+
+    return img_gry;
+}
+
+pair<Point, Point> Key(vector<KeyPoint> keypoint) {
+    Point upG = Point(0, 0);
+    Point downG = Point(0, 0);
+    vector<pair<int, int>>countdx(1000);
+
+    int sumx = 0, sumy = 0;
+    int avrx = 0, avry = 0;
+    int aq = 0, bq = 0, cq = 0, dq = 0, iq = 0;
+    for (int i = 0; i < keypoint.size(); i++) {
+        countdx.at(i).first = (int)keypoint.at(i).pt.x;
+        countdx.at(i).second = (int)keypoint.at(i).pt.y;
+        aq++;
+    }
+    sort(countdx.rbegin(), countdx.rend());
+    int green = 0;
+    for (green = 0; green < aq * 2 / 3; green++) {
+        if (iq % 5 == 0) {
+            sumx += countdx.at(green).first;
+            sumy += countdx.at(green).second;
+            dq++;
+        }
+        iq++;
+    }
+    avrx = sumx / dq;
+    avry = sumy / dq;
+    vector<pair<int, int>> up(500);
+    vector<pair<int, int>> down(500);
+    for (int i = 0; i < keypoint.size(); i++) {
+        if (keypoint.at(i).pt.x > avrx) {
+            if (keypoint.at(i).pt.y > avry) {
+                up.at(cq).first = (int)keypoint.at(i).pt.x;
+                up.at(cq).second = (int)keypoint.at(i).pt.y;
+                cq++;
+            }
+            else {
+                down.at(bq).first = keypoint.at(i).pt.x;
+                down.at(bq).second = keypoint.at(i).pt.y;
+                bq++;
+            }
+        }
+    }
+    sort(up.rbegin(), up.rend());
+    sort(down.rbegin(), down.rend());
+    upG = Point(up.at(4).first, up.at(4).second);
+    downG = Point(down.at(4).first, down.at(4).second);
+    return { upG,downG };
+}
+ 
+int main(int argc, const char* argv[]) {
+    errno_t error;
+    SYSTEMTIME systime;//時間記録用
+    GetLocalTime(&systime);
+    sprintf_s(FileName, "%d_%d_%dh%dm%d.csv", systime.wMonth, systime.wDay, systime.wHour, systime.wMinute, systime.wSecond);
+    error = fopen_s(&fp, FileName, "w+");//ファイル書き込み呼び出し
+
+    VideoCapture capture(0);
+    Mat frame1, frame2;
+    Mat frame1_gry, frame2_gry;
+    Mat edge1, edge2;
+    Mat img1, img2, img3, img4, diff, edge;
+    capture >> frame1;
+    Rect roi;
+    roi = selectROI("tracker", frame1);
+    if (roi.width == 0 || roi.height == 0) {
+        return 0;
+    }
+    frame1 = frame1(roi);
+    img1 = frame1.clone();
+    //cvtColor(frame1, frame1_gry, COLOR_BGR2GRAY);
+    //Canny(frame1_gry, edge1, 50, 100, 3, true);
+    auto algorithm = AKAZE::create();
+    vector<KeyPoint> keypoint1, keypoint2;
+    algorithm->detect(img1, keypoint1);
+    Mat descriptor1, descriptor2;
+    algorithm->compute(img1, keypoint1, descriptor1);
+    double b_area = 0;
+    int count = 0;
+    vector<int>countx(100);
+    vector<int>county(100);
+    vector<pair<int, int>>countdx(1000);
+    vector<int>index(100);
+    vector<Point>coord(100);
+    vector<Point>origincoord(100);
+    for (;;) {
+        waitKey(1);
+        capture >> frame2;
+
+        img2 = frame2.clone();
+        img3 = frame2.clone();
+        img4 = frame2.clone();
+        frame2 = frame2(roi);
+        
+        diff = Bit_Wise2(frame1, frame2);
+        medianBlur(diff, diff, 3);
+        Canny(diff, edge, 50, 100, 3, true);
+        dilate(edge, edge, Mat(), Point(-1, -1), 5);
+        bitwise_and(img3(roi), img3(roi), img4, edge);
+        //imshow("1", frame1_gry);
+        //imshow("2", descriptor1);
+
+
+        int white = MatArea(edge);
+        if (white < 1000) {
+            //dilate(diff, diff, Mat(), Point(-1, -1), 3);
+            Mat kernel = getStructuringElement(MORPH_RECT, Size(9, 9));
+            //morphologyEx(diff, diff, MORPH_OPEN, kernel);
+        }
+        //Canny(diff, edge2, 50, 100, 3, true);
+        algorithm->detect(img4, keypoint2);
+        algorithm->compute(img4, keypoint2, descriptor2);
+        Ptr<DescriptorMatcher> matcher = DescriptorMatcher::create("BruteForce");
+        vector<DMatch> match, match12, match21;
+        matcher->match(descriptor1, descriptor2, match12);
+        matcher->match(descriptor2, descriptor1, match21);
+
+        frame1 = frame2.clone();
+
+        Mat dest;
+        drawMatches(frame1, keypoint1, frame2, keypoint2, match, dest, Scalar::all(-1));
+        imshow("matching", dest);
+        waitKey(1);
+        int b = keypoint2.size();
+        if (b < 10) {
+            continue;
+        }
+        
+        Point upG = Point(0, 0);
+        Point downG = Point(0, 0);
+        upG=Key(keypoint2).first;
+        downG= Key(keypoint2).second;
+
+        if (upG == Point(0, 0) || downG == Point(0, 0)) {
+            continue;
+        }
+
+        circle(img4, upG, 5, Scalar(0, 255, 255), -1, 5);
+        circle(img4, downG, 5, Scalar(255, 255, 0), -1, 5);
+        printf("%d", upG.y);
+        //imshow("blacky", black);
+        //imshow("blacky2", neoblack);
+        waitKey(1);
+        
+        //imshow("diff", edge);
+        line(img4, upG, downG, Scalar(255, 255, 255), 3);
+        imshow("ans", img4);
+
+        //imshow("en", frame2);
+        if (waitKey(33) == 27) {//breakは必須
+            break;
+        }
+        
+    }
+    fclose(fp);
+    return 0;
+}
