@@ -1,0 +1,634 @@
+#define STRICT
+#define NOMINMAX
+
+#include <opencv2/core/utility.hpp>
+#include <opencv2/video/tracking.hpp>
+#include <opencv2/videoio.hpp> // videoioのヘッダーをインクルード
+#include <opencv2/highgui.hpp> // highguiのヘッダーをインクルード
+#include <opencv2/imgproc.hpp>
+#include <opencv2/imgcodecs.hpp>
+#include <opencv2/imgproc/imgproc_c.h>
+#include <opencv2/highgui/highgui_c.h>
+#include <opencv2/objdetect/detection_based_tracker.hpp>
+#include <iostream>
+#include<string>
+#include <vector>
+#include <stdio.h>
+#include<math.h>
+#include<process.h>
+#include<windows.h>
+#include<windowsx.h>
+#include <tchar.h>
+#include <opencv2/opencv.hpp>
+#include <opencv2/core.hpp>
+#include <opencv2/video.hpp>
+#include<cstring>
+#include <opencv2/imgcodecs.hpp>
+#include <opencv2/tracking.hpp>
+#include <numeric>      // std::iota
+#include <algorithm>    // std::sort, std::stable_sort
+#include <opencv2/video/background_segm.hpp>
+#include <functional>
+#include<stdlib.h>　//WM＿TIMERの精度が心配な時
+#include<time.h>　　//WM＿TIMERの精度が心配な時
+#include <random>
+#include<map>
+
+#ifdef _DEBUG
+#pragma comment(lib, "opencv_world452d.lib")
+#else
+#pragma comment(lib, "opencv_world452.lib")
+#endif
+
+using namespace cv;
+using namespace std;
+
+Mat Bit_Wise2(Mat img1, Mat img2) {
+	Mat img1_gry, img2_gry, img_gry;
+	cvtColor(img1, img1_gry, COLOR_BGR2GRAY);
+	cvtColor(img2, img2_gry, COLOR_BGR2GRAY);
+	absdiff(img1_gry, img2_gry, img_gry);
+
+	return img_gry;
+}
+
+Point center(Point max, Point min, Point MAX, Point MIN) {
+	Point v;
+	int k = 0;
+	double s1 = 0, s2 = 0;
+	int P1X = MIN.x;
+	int P1Y = MIN.y;
+	int P2Y = min.y;
+	int P2X = min.x;
+	int P3X = MAX.x;
+	int P3Y = MAX.y;
+	int P4Y = max.y;
+	int P4X = max.x;
+
+	s1 = ((P4X - P2X) * (P1Y - P2Y) - (P4Y - P2Y) * (P1X - P2X)) / 2;
+	s2 = ((P4X - P2X) * (P2Y - P3Y) - (P4Y - P2Y) * (P2X - P3X)) / 2;
+
+	v = Point(0, 0);
+	v.x = P1X + ((double)P3X - (double)P1X) * s1 / (s1 + s2);
+	v.y = P1Y + ((double)P3Y - (double)P1Y) * s1 / (s1 + s2);
+
+	return v;
+}
+
+int main(int argc, const char* argv[]) {
+	VideoCapture capture(0);
+	Mat frame1, frame2, gry;
+	Mat img, img2, img3;
+	Rect selection(0, 0, 700, 400);
+	Mat diff;
+	Mat edge;
+	vector<int> m1(5);
+	vector<int> m2(5);
+	vector<int> m3(5);
+	double sumx = 0, sumy = 0;
+	Point G = Point(0, 0);
+	int a = 0, b = 0, c = 0, d = 0;
+	double PI = 22 / 7;
+
+	frame1 = imread("image1.png");
+	frame2 = imread("image2.png");
+	img = frame2.clone();
+	img2 = frame2.clone();
+	//diff = Bit_Wise2(frame1(selection), frame2(selection));
+	diff = Bit_Wise2(frame1, frame2);
+	medianBlur(diff, diff, 3);
+	Canny(diff, edge, 50, 100, 3, true);
+	dilate(edge, edge, Mat(), Point(-1, -1), 7);
+	imshow("anan", edge);
+	
+	//imshow("ann2", img3);
+	//bitwise_and(img2(selection), img2(selection), img3, edge);
+	imshow("ann", img2);
+	bitwise_and(img2, img2, img3, edge);
+	imshow("an", img3);
+	waitKey(0);
+	auto algorithm = AKAZE::create();
+	vector<KeyPoint> keypoint;
+	Mat descriptor;
+	algorithm->detect(img, keypoint);
+	algorithm->compute(img, keypoint, descriptor);
+	for (int i = 0; i < keypoint.size(); i++) {
+		//printf("%f,%f\n", keypoint.at(i).pt.x, keypoint.at(i).pt.y);
+		circle(img, keypoint.at(i).pt, 1, Scalar(0, 255, 255), 2, 5);
+		sumx += (double)keypoint.at(i).pt.x;
+		sumy += (double)keypoint.at(i).pt.y;
+		a++;
+	}
+	imshow("sao", descriptor);
+	printf("%d,%d\n", a, descriptor.size().height);
+	G.x = sumx / (double)a;
+	G.y = sumy / (double)a;
+	circle(img, G, 4, Scalar(255, 0, 255), 2, 5);
+	
+	vector<double> distance(a);
+	vector<double> radian(a);
+	vector<double> degree(a);
+	vector<pair<double, double>> data(a);
+	vector<pair<double,int>> zata(a);
+	for (int j = 0; j < a; j++) {
+		//distance.at(j) = sqrt(pow(abs(G.x - (double)keypoint.at(j).pt.x), 2) + pow(abs(G.y - (double)keypoint.at(j).pt.y), 2));
+		//radian.at(j) = atan2(G.y - (double)keypoint.at(j).pt.y, G.x - (double)keypoint.at(j).pt.x);
+		data.at(j).second = sqrt(pow(G.x - (double)keypoint.at(j).pt.x, 2) + pow(G.y - (double)keypoint.at(j).pt.y, 2));
+		data.at(j).first = atan2(G.y - (double)keypoint.at(j).pt.y, G.x - (double)keypoint.at(j).pt.x);
+		degree.at(j) = radian.at(j) * (double)180 / PI;
+		zata.at(j).first = data.at(j).first;
+		zata.at(j).second = j;
+
+	}
+	sort(data.begin(), data.end());
+	sort(zata.begin(), zata.end());
+	vector<double> maxstore(7);
+	vector<int> indexstore(7);
+	vector<pair<double, double>> store(6);
+	vector<pair<double, int>> store2(14);
+	Point edge1 = Point(0, 0);
+	Point edge2 = Point(0, 0);
+	Point edge3 = Point(0, 0);
+	double set_radian = -(double)355/ (double)226;
+	double set_radian2 = -(double)1775/ (double)678;
+	double base_radian = -(double)355/ (double)113;
+	//double set_radian = -2;
+	//double set_radian2 = -2.5;
+	//double base_radian = -3;
+	int s = 0;
+	int ss = 0;
+
+	for (int k = 0; k < a; k++) {
+		printf("%f,%f\n", data.at(k).first, data.at(k).second);
+		
+		circle(img, keypoint.at(zata.at(k).second).pt, 4, Scalar(50*s, (255 - 50 * s), 50 * s), -1, 5);
+		
+		store2.at(ss).first += data.at(k).second;
+		if (data.at(k).first > set_radian2) {
+			set_radian2 += (double)355/ (double)678;
+			
+			//set_radian2 += 0.5;
+			ss++;
+			if (s > 5) {
+				break;
+			}
+		}
+		if (data.at(k).first > set_radian) {
+			imshow("a", img);
+			waitKey(0);
+
+			set_radian += (double)355/ (double)339;
+			base_radian += (double)355/ (double)339;
+			//set_radian += 1;
+			//base_radian += 1;
+			s++;
+			if (s > 5) {
+				break;
+			}
+		}
+
+		if (data.at(k).first < set_radian && data.at(k).first > base_radian) {
+			if (store.at(s).first < data.at(k).second) {
+				store.at(s).first = data.at(k).second;
+				store.at(s).second = data.at(k).first;
+				
+			}
+		}
+		
+	}
+	sort(store.rbegin(), store.rend());
+	
+	for (int b = 0; b < 2; b++) {
+		for (int bb = 5; bb > 0; bb--) {
+			if (abs(abs(store.at(b + 1).second) - abs(store.at(b).second)) < PI / 6) {
+				store.at(b + 1) = store.at(b + 2);
+				store.at(b + 2) = store.at(b + 3);
+				//printf("c%d\n", b);
+			}
+			else {
+				break;
+			}
+		}
+	}
+	
+	for (int q = 0; q < a; q++) {
+		distance.at(q) = sqrt(pow(G.x - (double)keypoint.at(q).pt.x, 2) + pow(G.y - (double)keypoint.at(q).pt.y, 2));
+		if (distance.at(q) == store.at(0).first) {
+			edge1 = keypoint.at(q).pt;
+			circle(img, edge1, 4, Scalar(0, 0, 255), -1, 5);
+			printf("%f\n", store.at(0).second);
+		}
+		else if (distance.at(q) == store.at(1).first) {
+			edge2 = keypoint.at(q).pt;
+			circle(img, edge2, 4, Scalar(0, 255, 0), -1, 5);
+			printf("%f\n", store.at(1).second);
+		}
+		else if (distance.at(q) == store.at(2).first) {
+			edge3 = keypoint.at(q).pt;
+			circle(img, edge3, 4, Scalar(255, 0, 0), -1, 5);
+			printf("%f\n", store.at(2).second);
+		}
+	}
+
+	
+
+	vector<double>distance1(a);
+	vector<double>distance2(a);
+	vector<double>distance3(a);
+	vector<vector<Point>>keep1(5, vector<Point>(a));
+	vector<vector<Point>>keep2(5, vector<Point>(a));
+	vector<vector<Point>>keep3(5, vector<Point>(a));
+	vector<Point> G1(5);
+	vector<Point> G2(5);
+	vector<Point> G3(5);
+	vector<pair<double, double>>G1maxstore(6);
+	vector<pair<double, double>>G1minstore(6);
+	vector<pair<double, double>>G2maxstore(6);
+	vector<pair<double, double>>G2minstore(6);
+	vector<pair<double, double>>G3maxstore(6);
+	vector<pair<double, double>>G3minstore(6);
+	vector<double> asp1(5);
+	vector<double> asp2(5);
+	vector<double> asp3(5);
+
+
+	for (int r = 0; r < 5; r++) {//領域増加
+		int u1 = 0, u2 = 0, u3 = 0;
+		double sumx1 = 0;
+		double sumy1 = 0;
+		double sumx2 = 0;
+		double sumy2 = 0;
+		double sumx3 = 0;
+		double sumy3 = 0;
+		//double set_distance = (store.at(0).first / 3)+(store.at(0).first / 8)*r;
+		double set_distance1 = (store.at(0).first / 6) * (r + 1);
+		double set_distance2 = (store.at(1).first / 6) * (r + 1);
+		double set_distance3 = (store.at(2).first / 6) * (r + 1);
+		for (int u = 0; u < a; u++) {//全体検索
+			distance1.at(u) = sqrt(pow(edge1.x - (double)keypoint.at(u).pt.x, 2) + pow(edge1.y - (double)keypoint.at(u).pt.y, 2));
+			distance2.at(u) = sqrt(pow(edge2.x - (double)keypoint.at(u).pt.x, 2) + pow(edge2.y - (double)keypoint.at(u).pt.y, 2));
+			distance3.at(u) = sqrt(pow(edge3.x - (double)keypoint.at(u).pt.x, 2) + pow(edge3.y - (double)keypoint.at(u).pt.y, 2));
+			if (distance1.at(u) < set_distance1) {
+				sumx1 += keypoint.at(u).pt.x;
+				sumy1 += keypoint.at(u).pt.y;
+				keep1.at(r).at(u1) = keypoint.at(u).pt;
+				//printf("%d\n", keep1.at(u1).x);
+				//circle(img, keypoint.at(u).pt, 1, Scalar(0, 0, 255), 2, 5);
+				u1++;
+			}
+			if (distance2.at(u) < set_distance2) {
+				sumx2 += keypoint.at(u).pt.x;
+				sumy2 += keypoint.at(u).pt.y;
+				keep2.at(r).at(u2) = keypoint.at(u).pt;
+				//circle(img, keypoint.at(u).pt, 1, Scalar(0, 255, 0), 2, 5);
+				u2++;
+			}
+			if (distance3.at(u) < set_distance3) {
+				sumx3 += keypoint.at(u).pt.x;
+				sumy3 += keypoint.at(u).pt.y;
+				keep3.at(r).at(u3) = keypoint.at(u).pt;
+				//circle(img, keypoint.at(u).pt, 1, Scalar(255, 0, 0), 2, 5);
+				u3++;
+			}
+		}
+		G1.at(r).x = sumx1 / (double)u1;
+		G1.at(r).y = sumy1 / (double)u1;
+		G2.at(r).x = sumx2 / (double)u2;
+		G2.at(r).y = sumy2 / (double)u2;
+		G3.at(r).x = sumx3 / (double)u3;
+		G3.at(r).y = sumy3 / (double)u3;
+		//circle(img, G1, 2, Scalar(0, 255, 255), 2, 5);
+		//circle(img, G2, 2, Scalar(255, 255, 0), 2, 5);
+		//circle(img, G3, 2, Scalar(255, 0, 255), 2, 5);
+		vector<pair<double, double>> G1data(u1);
+		vector<pair<double, double>> G2data(u2);
+		vector<pair<double, double>> G3data(u3);
+
+
+		//長さと角度の計算
+		for (int r1 = 0; r1 < u1; r1++) {
+			G1data.at(r1).second = sqrt(pow(G1.at(r).x - keep1.at(r).at(r1).x, 2) + pow(G1.at(r).y - keep1.at(r).at(r1).y, 2));
+			G1data.at(r1).first = atan2(G1.at(r).y - keep1.at(r).at(r1).y, G1.at(r).x - keep1.at(r).at(r1).x);
+			//printf("%f,%f\n", G1data.at(r1).first, G1data.at(r1).second);
+		}
+		for (int r2 = 0; r2 < u2; r2++) {
+			G2data.at(r2).second = sqrt(pow(G2.at(r).x - keep2.at(r).at(r2).x, 2) + pow(G2.at(r).y - keep2.at(r).at(r2).y, 2));
+			G2data.at(r2).first = atan2(G2.at(r).y - keep2.at(r).at(r2).y, G2.at(r).x - keep2.at(r).at(r2).x);
+			//printf("%f,%f\n", G2data.at(r2).first, G2data.at(r2).second);
+		}
+		for (int r3 = 0; r3 < u3; r3++) {
+			G3data.at(r3).second = sqrt(pow(G3.at(r).x - keep3.at(r).at(r3).x, 2) + pow(G3.at(r).y - keep3.at(r).at(r3).y, 2));
+			G3data.at(r3).first = atan2(G3.at(r).y - keep3.at(r).at(r3).y, G3.at(r).x - keep3.at(r).at(r3).x);
+			//printf("%f,%f\n", G3data.at(r3).first, G3data.at(r3).second);
+		}
+
+		sort(G1data.begin(), G1data.end());
+		sort(G2data.begin(), G2data.end());
+		sort(G3data.begin(), G3data.end());
+		int s1 = 0, s2 = 0, s3 = 0;
+		double set_radian1 = -2;
+		double set_radian2 = -2;
+		double set_radian3 = -2;
+		//ラジアン6等分&最大値取得
+		for (int e1 = 0; e1 < u1; e1++) {
+			if (e1 == 0) {
+				G1minstore.at(s1).first = G1data.at(e1).second;
+				G1minstore.at(s1).second = G1data.at(e1).first;
+			}
+
+			if (G1data.at(e1).first > set_radian1) {
+				set_radian1 += 1;
+				s1++;
+				if (s1 > 5) {
+					break;
+				}
+				G1minstore.at(s1).first = G1data.at(e1).second;
+				G1minstore.at(s1).second = G1data.at(e1).first;
+			}
+
+			if (G1data.at(e1).first < set_radian1) {
+				if (G1maxstore.at(s1).first < G1data.at(e1).second) {
+					G1maxstore.at(s1).first = G1data.at(e1).second;
+					G1maxstore.at(s1).second = G1data.at(e1).first;
+				}
+
+				if (G1minstore.at(s1).first > G1data.at(e1).second) {
+					G1minstore.at(s1).first = G1data.at(e1).second;
+					G1minstore.at(s1).second = G1data.at(e1).first;
+				}
+			}
+		}
+
+		for (int e2 = 0; e2 < u2; e2++) {
+			if (e2 == 0) {
+				G2minstore.at(s2).first = G2data.at(e2).second;
+				G2minstore.at(s2).second = G2data.at(e2).first;
+			}
+
+			if (G2data.at(e2).first > set_radian2) {
+				set_radian2 += 1;
+				s2++;
+				if (s2 > 5) {
+					break;
+				}
+				G2minstore.at(s2).first = G2data.at(e2).second;
+				G2minstore.at(s2).second = G2data.at(e2).first;
+			}
+
+			if (G2data.at(e2).first < set_radian2) {
+				if (G2maxstore.at(s2).first < G2data.at(e2).second) {
+					G2maxstore.at(s2).first = G2data.at(e2).second;
+					G2maxstore.at(s2).second = G2data.at(e2).first;
+				}
+
+				if (G2minstore.at(s2).first > G2data.at(e2).second) {
+					G2minstore.at(s2).first = G2data.at(e2).second;
+					G2minstore.at(s2).second = G2data.at(e2).first;
+					//printf("in\n");
+				}
+			}
+		}
+
+		for (int e3 = 0; e3 < u3; e3++) {
+			if (e3 == 0) {
+				G3minstore.at(s3).first = G3data.at(e3).second;
+				G3minstore.at(s3).second = G3data.at(e3).first;
+			}
+
+			if (G3data.at(e3).first > set_radian3) {
+				set_radian3 += 1;
+				s3++;
+				if (s3 > 5) {
+					break;
+				}
+				G3minstore.at(s3).first = G3data.at(e3).second;
+				G3minstore.at(s3).second = G3data.at(e3).first;
+			}
+
+			if (G3data.at(e3).first < set_radian3) {
+				if (G3maxstore.at(s3).first < G3data.at(e3).second) {
+					G3maxstore.at(s3).first = G3data.at(e3).second;
+					G3maxstore.at(s3).second = G3data.at(e3).first;
+				}
+
+				if (G3minstore.at(s3).first > G3data.at(e3).second) {
+					G3minstore.at(s3).first = G3data.at(e3).second;
+					G3minstore.at(s3).second = G3data.at(e3).first;
+				}
+			}
+		}
+
+		sort(G1maxstore.rbegin(), G1maxstore.rend());
+		sort(G2maxstore.rbegin(), G2maxstore.rend());
+		sort(G3maxstore.rbegin(), G3maxstore.rend());
+		sort(G1minstore.begin(), G1minstore.end());
+		sort(G2minstore.begin(), G2minstore.end());
+		sort(G3minstore.begin(), G3minstore.end());
+
+		/*
+		int t1 = 0,t2=0,t3=0;
+		for (t1 = 0; t1 < s1;t1++) {
+			if (abs(abs(G1minstore.at((double)6 - s1).second) - abs(G1maxstore.at(t1).second)) *63 < 88 || abs(abs(G1minstore.at((double)6 - s1).second) - abs(G1maxstore.at(t1).second)) *63 > 110) {
+				G1maxstore.at(0) = G1maxstore.at(t1);
+			}
+			else {
+				//printf("1:%d\n", t1);
+				break;
+			}
+		}
+		for (t2 = 0; t2 < s2;t2++) {
+			if (abs(abs(G2minstore.at((double)6 - s2).second) - abs(G2maxstore.at(t2).second)) *63 < 88 || abs(abs(G2minstore.at((double)6 - s2).second) - abs(G2maxstore.at(t2).second)) *63 > 110) {
+				G2maxstore.at(0) = G2maxstore.at(t2);
+			}
+			else {
+				//printf("2:%d\n", t2);
+				break;
+			}
+		}
+		for (t3 = 0; t3 < s3;t3++) {
+			//printf("%f,%f\n", G3minstore.at((double)6 - s3).second , G3maxstore.at(t3).second);
+			if (abs(abs(G3minstore.at((double)6 - s3).second) - abs(G3maxstore.at(t3).second))*63 < 88 || abs(abs(G3minstore.at((double)6 - s3).second) - abs(G3maxstore.at(t3).second)) *63 > 110) {
+				G3maxstore.at(0) = G3maxstore.at(t3);
+			}
+			else {
+				//printf("3:%d\n", t3);
+				break;
+			}
+		}
+		*/
+		asp1.at(r) = G1maxstore.at(0).first / G1minstore.at((double)6 - s1).first;
+		asp2.at(r) = G2maxstore.at(0).first / G2minstore.at((double)6 - s2).first;
+		asp3.at(r) = G3maxstore.at(0).first / G3minstore.at((double)6 - s3).first;
+		printf("red:%f green:%f blue:%f\n", asp1.at(r), asp2.at(r), asp3.at(r));
+		imshow("a", img);
+		waitKey(0);
+		m1.at(r) = u1;
+		m2.at(r) = u2;
+		m3.at(r) = u3;
+	}
+
+	double base_asp1 = 0;
+	double base_asp2 = 0;
+	double base_asp3 = 0;
+	int index1 = 0;
+	int index2 = 0;
+	int index3 = 0;
+
+	for (int z = 0; z < 5; z++) {
+		if (asp1.at(z) > base_asp1) {
+			base_asp1 = asp1.at(z);
+			index1 = z;
+		}
+		if (asp2.at(z) > base_asp2) {
+			base_asp2 = asp2.at(z);
+			index2 = z;
+		}
+		if (asp3.at(z) > base_asp3) {
+			base_asp3 = asp3.at(z);
+			index3 = z;
+		}
+	}
+	printf("%d,%d,%d\n", index1, index2, index3);
+	vector<double> dev1x(m1.at(index1));
+	vector<double> dev1y(m1.at(index1));
+	vector<double> dev2x(m2.at(index2));
+	vector<double> dev2y(m2.at(index2));
+	vector<double> dev3x(m3.at(index3));
+	vector<double> dev3y(m3.at(index3));
+	double powdev1x = 0;
+	double powdev1y = 0;
+	double powdev2x = 0;
+	double powdev2y = 0;
+	double powdev3x = 0;
+	double powdev3y = 0;
+	double var1x = 0;
+	double var1y = 0;
+	double var2x = 0;
+	double var2y = 0;
+	double var3x = 0;
+	double var3y = 0;
+	double Sdev1 = 0;
+	double Sdev2 = 0;
+	double Sdev3 = 0;
+	double cov1 = 0;
+	double cov2 = 0;
+	double cov3 = 0;
+	double a1 = 0;
+	double a2 = 0;
+	double a3 = 0;
+	double b1 = 0;
+	double b2 = 0;
+	double b3 = 0;
+	Point C1 = Point(0, 0);
+	Point C2 = Point(0, 0);
+	Point C3 = Point(0, 0);
+	double c1x = 0;
+	double c1y = 0;
+	double c2x = 0;
+	double c2y = 0;
+	double c3x = 0;
+	double c3y = 0;
+	//printf("%d\n", G1.at(index1).x);
+	for (int n1 = 0; n1 < m1.at(index1); n1++) {
+		//printf("%d,%d\n", keep1.at(index1).at(n1).x, keep1.at(index1).at(n1).y);
+		dev1x.at(n1) = keep1.at(index1).at(n1).x - G1.at(index1).x;
+		dev1y.at(n1) = keep1.at(index1).at(n1).y - G1.at(index1).y;
+		powdev1x += pow(dev1x.at(n1), 2);
+		powdev1y += pow(dev1y.at(n1), 2);
+		Sdev1 += dev1x.at(n1) * dev1y.at(n1);
+	}
+	
+	var1x = powdev1x/(double)m1.at(index1);
+	//printf("%f\n", var1x);
+	var1y = powdev1y / (double)m1.at(index1);
+	cov1 = Sdev1 / (double)m1.at(index1);
+	//printf("%f\n", cov1);
+	for (int n2 = 0; n2 < m2.at(index2); n2++) {
+		//printf("%d,%d\n", keep2.at(index2).at(n2).x, keep2.at(index2).at(n2).y);
+		dev2x.at(n2) = keep2.at(index2).at(n2).x - G2.at(index2).x;
+		dev2y.at(n2) = keep2.at(index2).at(n2).y - G2.at(index2).y;
+		powdev2x += pow(dev2x.at(n2), 2);
+		powdev2y += pow(dev2y.at(n2), 2);
+		Sdev2 += dev2x.at(n2) * dev2y.at(n2);
+	}
+	var2x = powdev2x / (double)m2.at(index2);
+	var2y = powdev2y / (double)m2.at(index2);
+	cov2 = Sdev2 / (double)m2.at(index2);
+	for (int n3 = 0; n3 < m3.at(index3); n3++) {
+		//printf("%d,%d\n", keep3.at(index3).at(n3).x, keep3.at(index3).at(n3).y);
+		dev3x.at(n3) = keep3.at(index3).at(n3).x - G3.at(index3).x;
+		dev3y.at(n3) = keep3.at(index3).at(n3).y - G3.at(index3).y;
+		powdev3x += pow(dev3x.at(n3), 2);
+		powdev3y += pow(dev3y.at(n3), 2);
+		Sdev3 += dev3x.at(n3) * dev3y.at(n3);
+	}
+	var3x = powdev3x / (double)m3.at(index3);
+	var3y = powdev3y / (double)m3.at(index3);
+	cov3 = Sdev3 / (double)m3.at(index3);
+
+	a1 = cov1 / var1x;
+	a2 = cov2 / var2x;
+	a3 = cov3 / var3x;
+	//printf("%f\n", a1);
+	//printf("%f\n", a2);
+	//printf("%f\n", a3);
+	b1 = G1.at(index1).y - a1 * G1.at(index1).x;
+	b2 = G2.at(index2).y - a2 * G2.at(index2).x;
+	b3 = G3.at(index3).y - a3 * G3.at(index3).x;
+	//printf("%f\n", b1);
+	//printf("%f\n", b2);
+	//printf("%f\n", b3);
+	/*
+	C1.x = (b2 - b1) / (a1 - a2);
+	C1.y = a1 * C1.x + b1;
+	C2.x = (b3 - b2) / (a2 - a3);
+	C2.y = a2 * C2.x + b2;
+	C3.x = (b1 - b3) / (a3 - a1);
+	C3.y = a3 * C3.x + b3;
+	*/
+	c1x = (b2 - b1) / (a1 - a2);
+	c1y = a1 * c1x + b1;
+	c2x = (b3 - b2) / (a2 - a3);
+	c2y = a2 * c2x + b2;
+	c3x = (b1 - b3) / (a3 - a1);
+	c3y = a3 * c3x + b3;
+	printf("%f,%f\n", c1x, c1y);
+	printf("%f,%f\n", c2x, c2y);
+	printf("%f,%f\n", c3x, c3y);
+
+	line(img, edge1, G1.at(index1), Scalar(0, 0, 200), 3, 4);
+	line(img, edge2, G2.at(index2), Scalar(0, 200, 0), 3, 4);
+	line(img, edge3, G3.at(index3), Scalar(200, 0, 0), 3, 4);
+
+	Point v1 = center(edge2, G2.at(index2), edge1, G1.at(index1));
+	Point v2 = center(edge3, G3.at(index3), edge2, G2.at(index2));
+	Point v3 = center(edge1, G1.at(index1), edge3, G3.at(index3));
+	circle(img, Point(v1.x,v1.y), 5, Scalar(0, 255, 255), -1, 5);
+	circle(img, Point(v2.x, v2.y), 5, Scalar(255, 255, 0), -1, 5);
+	circle(img, Point(v3.x, v3.y), 5, Scalar(255, 0, 255), -1, 5);
+	Point v = Point(0, 0);
+	//v.x = (c1x + c2x + c3x) / 3;
+	//v.y = (c1y + c2y + c3y) / 3;
+	v.x = (v1.x + v2.x + v3.x) / 3;
+	v.y = (v1.y + v2.y + v3.y) / 3;
+	circle(img, v, 5, Scalar(155, 155, 155), -1, 5);
+	Rect roi(v.x-20, v.y-50, 190, 170);
+	//rectangle(img, roi, Scalar(255, 55, 255), 1);
+	imshow("a", img);
+	waitKey(0);
+
+	Point A = Point(0, 0);
+	Point B = Point(0, 0);
+	double cos = 0, theta = 0;
+
+	A.x = edge2.x - v.x;
+	A.y = edge2.y - v.y;
+	B.x = edge3.x - v.x;
+	B.y = edge3.y - v.y;
+
+	cos = ((double)A.x * (double)B.x + (double)A.y * (double)B.y) / (sqrt(pow(A.x, 2) + pow(A.y, 2)) * sqrt(pow(B.x, 2) + pow(B.y, 2)));
+	theta = acos(cos) * (double)180 / PI;
+	printf("%f\n", theta);
+	waitKey(0);
+	return 0;
+}
